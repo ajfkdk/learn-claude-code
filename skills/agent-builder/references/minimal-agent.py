@@ -19,7 +19,7 @@ import os
 # Configuration
 client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 MODEL = os.getenv("MODEL_NAME", "claude-sonnet-4-20250514")
-WORKDIR = Path.cwd()
+WORKDIR = Path(r'D:\develop\CPP\learn-claude-code')
 
 # System prompt - keep it simple
 SYSTEM = f"""You are a coding agent at {WORKDIR}.

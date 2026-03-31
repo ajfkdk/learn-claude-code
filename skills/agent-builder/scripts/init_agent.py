@@ -98,7 +98,7 @@ client = Anthropic(
     base_url=os.getenv("ANTHROPIC_BASE_URL")
 )
 MODEL = os.getenv("MODEL_NAME", "claude-sonnet-4-20250514")
-WORKDIR = Path.cwd()
+WORKDIR = Path(r'D:\develop\CPP\learn-claude-code')
 
 SYSTEM = f"""You are a coding agent at {{WORKDIR}}.
 

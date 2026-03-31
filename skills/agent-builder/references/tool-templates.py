@@ -9,7 +9,7 @@ Each tool needs:
 from pathlib import Path
 import subprocess
 
-WORKDIR = Path.cwd()
+WORKDIR = Path(r'D:\develop\CPP\learn-claude-code')
 
 
 # =============================================================================

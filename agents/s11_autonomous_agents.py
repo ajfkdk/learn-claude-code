@@ -50,7 +50,7 @@ load_dotenv(override=True)
 if os.getenv("ANTHROPIC_BASE_URL"):
     os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
 
-WORKDIR = Path.cwd()
+WORKDIR = Path(r'D:\develop\CPP\learn-claude-code')
 client = Anthropic(base_url=os.getenv("ANTHROPIC_BASE_URL"))
 MODEL = os.environ["MODEL_ID"]
 TEAM_DIR = WORKDIR / ".team"
@@ -214,6 +214,10 @@ class TeammateManager:
         return f"Spawned '{name}' (role: {role})"
 
     def _loop(self, name: str, role: str, prompt: str):
+        """
+        成员智能体主循环：工作阶段 -> 空闲阶段 -> 工作阶段 -> ...
+        核心特性：自主找活（扫描任务板）+ 超时自动关闭
+        """
         team_name = self.config["team_name"]
         sys_prompt = (
             f"You are '{name}', role: {role}, team: {team_name}, at {WORKDIR}. "
@@ -223,14 +227,18 @@ class TeammateManager:
         tools = self._teammate_tools()
 
         while True:
-            # -- WORK PHASE: standard agent loop --
+            # ========== 工作阶段：执行任务，最多 50 轮 ==========
             for _ in range(50):
+                # 1. 检查邮箱，处理新消息
                 inbox = BUS.read_inbox(name)
                 for msg in inbox:
+                    # 收到关闭请求，立即退出
                     if msg.get("type") == "shutdown_request":
                         self._set_status(name, "shutdown")
                         return
                     messages.append({"role": "user", "content": json.dumps(msg)})
+
+                # 2. 调用 LLM，获取下一步动作
                 try:
                     response = client.messages.create(
                         model=MODEL,
@@ -242,13 +250,19 @@ class TeammateManager:
                 except Exception:
                     self._set_status(name, "idle")
                     return
+
                 messages.append({"role": "assistant", "content": response.content})
+
+                # 3. 模型停止调用工具，说明当前任务完成，跳出工作循环
                 if response.stop_reason != "tool_use":
                     break
+
+                # 4. 执行模型调用的所有工具
                 results = []
-                idle_requested = False
+                idle_requested = False  # 标记：模型是否主动请求进入空闲
                 for block in response.content:
                     if block.type == "tool_use":
+                        # 特殊处理：模型调用 idle 工具，表示"我没活干了"
                         if block.name == "idle":
                             idle_requested = True
                             output = "Entering idle phase. Will poll for new tasks."
@@ -261,45 +275,58 @@ class TeammateManager:
                             "content": str(output),
                         })
                 messages.append({"role": "user", "content": results})
+
+                # 5. 模型主动请求空闲，跳出工作循环，进入空闲阶段
                 if idle_requested:
                     break
 
-            # -- IDLE PHASE: poll for inbox messages and unclaimed tasks --
+            # ========== 空闲阶段：主动找活，最多等待 60 秒 ==========
             self._set_status(name, "idle")
-            resume = False
-            polls = IDLE_TIMEOUT // max(POLL_INTERVAL, 1)
+            resume = False  # 标记：是否找到新工作
+            polls = IDLE_TIMEOUT // max(POLL_INTERVAL, 1)  # 计算轮询次数（60秒 / 5秒 = 12次）
+
             for _ in range(polls):
-                time.sleep(POLL_INTERVAL)
+                time.sleep(POLL_INTERVAL)  # 每 5 秒轮询一次
+
+                # 1. 检查邮箱：leader 是否发来新消息？
                 inbox = BUS.read_inbox(name)
                 if inbox:
                     for msg in inbox:
+                        # 收到关闭请求，立即退出
                         if msg.get("type") == "shutdown_request":
                             self._set_status(name, "shutdown")
                             return
                         messages.append({"role": "user", "content": json.dumps(msg)})
-                    resume = True
+                    resume = True  # 有新消息，恢复工作
                     break
+
+                # 2. 扫描任务板：有没有无人认领的任务？
                 unclaimed = scan_unclaimed_tasks()
                 if unclaimed:
-                    task = unclaimed[0]
-                    result = claim_task(task["id"], name)
+                    task = unclaimed[0]  # 取第一个未认领任务
+                    result = claim_task(task["id"], name)  # 尝试认领（带锁，防止多人抢同一任务）
                     if result.startswith("Error:"):
-                        continue
+                        continue  # 认领失败（被别人抢了），继续轮询
+                    # 认领成功，构造任务提示
                     task_prompt = (
                         f"<auto-claimed>Task #{task['id']}: {task['subject']}\n"
                         f"{task.get('description', '')}</auto-claimed>"
                     )
+                    # 如果上下文太短（被压缩过），重新注入身份信息
                     if len(messages) <= 3:
                         messages.insert(0, make_identity_block(name, role, team_name))
                         messages.insert(1, {"role": "assistant", "content": f"I am {name}. Continuing."})
                     messages.append({"role": "user", "content": task_prompt})
                     messages.append({"role": "assistant", "content": f"Claimed task #{task['id']}. Working on it."})
-                    resume = True
+                    resume = True  # 找到新任务，恢复工作
                     break
 
+            # 3. 空闲超时：60 秒内没找到新工作，自动关闭（下班）
             if not resume:
                 self._set_status(name, "shutdown")
                 return
+
+            # 4. 找到新工作，切换回工作状态，继续外层 while 循环
             self._set_status(name, "working")
 
     def _exec(self, sender: str, tool_name: str, args: dict) -> str:

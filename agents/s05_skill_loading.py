@@ -49,10 +49,10 @@ load_dotenv(override=True)
 if os.getenv("ANTHROPIC_BASE_URL"):
     os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
 
-WORKDIR = Path.cwd()
+WORKDIR = Path(r'D:\develop\CPP\learn-claude-code')
 client = Anthropic(base_url=os.getenv("ANTHROPIC_BASE_URL"))
 MODEL = os.environ["MODEL_ID"]
-SKILLS_DIR = WORKDIR / "skills"
+SKILLS_DIR = Path(r'D:\develop\CPP\learn-claude-code\skills')
 
 
 # -- SkillLoader: scan skills/<name>/SKILL.md with YAML frontmatter --
