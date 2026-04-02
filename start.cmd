@@ -1,0 +1,1 @@
+D:\develop\CPP\learn-claude-code\.venv\Scripts\python.exe D:\develop\CPP\learn-claude-code\MyAgent\AgentCore.py 

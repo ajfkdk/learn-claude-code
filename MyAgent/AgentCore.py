@@ -815,6 +815,12 @@ def agent_loop(messages: list):
             if block.type == "tool_use":
                 if block.name == "compress":
                     manual_compress = True
+                tool_input_preview = ""
+                if block.name == "bash" and isinstance(block.input, dict):
+                    tool_input_preview = block.input.get("command", "")
+                elif block.name in ("read_file", "write_file", "edit_file") and isinstance(block.input, dict):
+                    tool_input_preview = block.input.get("path", "")
+                print(f"[tool] using {block.name}" + (f": {tool_input_preview}" if tool_input_preview else ""))
                 handler = TOOL_HANDLERS.get(block.name)
                 try:
                     output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
@@ -838,41 +844,9 @@ def agent_loop(messages: list):
 
 
 # === SECTION: repl ===
-# 交互式REPL循环
+# 交互式REPL循环（已迁移到 Textual TUI）
 
 if __name__ == "__main__":
-    history = []
-    while True:
-        try:
-            query = input("\033[36ms_full >> \033[0m")
-        except (EOFError, KeyboardInterrupt):
-            break
-        if query.strip().lower() in ("q", "exit", ""):
-            break
-        # 手动压缩命令
-        if query.strip() == "/compact":
-            if history:
-                print("[manual compact via /compact]")
-                history[:] = auto_compact(history)
-            continue
-        # 列出所有任务
-        if query.strip() == "/tasks":
-            print(TASK_MGR.list_all())
-            continue
-        # 列出所有团队成员
-        if query.strip() == "/team":
-            print(TEAM.list_all())
-            continue
-        # 读取lead收件箱
-        if query.strip() == "/inbox":
-            print(json.dumps(BUS.read_inbox("lead"), indent=2))
-            continue
-        # 启动主循环
-        history.append({"role": "user", "content": query})
-        agent_loop(history)
-        response_content = history[-1]["content"]
-        if isinstance(response_content, list):
-            for block in response_content:
-                if hasattr(block, "text"):
-                    print(block.text)
-        print()
+    from tui import MyAgentApp
+    app = MyAgentApp()
+    app.run()
