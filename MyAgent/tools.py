@@ -57,14 +57,14 @@ def run_edit(path: str, old_text: str, new_text: str) -> str:
 
 
 # === TOOL_HANDLERS skeleton ===
-# Manager-related handlers are stubbed. Connections to TODO, BG, TASK_MGR, BUS, TEAM, SKILLS
-# will be established by agentcore.py after managers.py is created.
+# TOOL_HANDLERS: 基础能力（子代理默认使用）
+# FULL_TOOL_HANDLERS: Leader 增量能力（继承 TOOL_HANDLERS）
+# 实际 manager 绑定在 agentcore.py 完成
 TOOL_HANDLERS = {
     "bash":             lambda **kw: run_bash(kw["command"]),
     "read_file":        lambda **kw: run_read(kw["path"], kw.get("limit")),
     "write_file":       lambda **kw: run_write(kw["path"], kw["content"]),
     "edit_file":        lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
-    "TodoWrite":        lambda **kw: "Error: Manager not available",
     "task":             lambda **kw: "Error: Manager not available",
     "load_skill":       lambda **kw: "Error: Manager not available",
     "compress":         lambda **kw: "Compressing...",
@@ -74,6 +74,12 @@ TOOL_HANDLERS = {
     "task_get":         lambda **kw: "Error: Manager not available",
     "task_update":      lambda **kw: "Error: Manager not available",
     "task_list":        lambda **kw: "Error: Manager not available",
+    "idle":             lambda **kw: "Lead does not idle.",
+}
+
+FULL_TOOL_HANDLERS = dict(TOOL_HANDLERS)
+FULL_TOOL_HANDLERS.update({
+    "TodoWrite":        lambda **kw: "Error: Manager not available",
     "spawn_teammate":   lambda **kw: "Error: Manager not available",
     "list_teammates":   lambda **kw: "Error: Manager not available",
     "send_message":     lambda **kw: "Error: Manager not available",
@@ -81,12 +87,11 @@ TOOL_HANDLERS = {
     "broadcast":        lambda **kw: "Error: Manager not available",
     "shutdown_request": lambda **kw: "Error: Manager not available",
     "plan_approval":    lambda **kw: "Error: Manager not available",
-    "idle":             lambda **kw: "Lead does not idle.",
     "claim_task":       lambda **kw: "Error: Manager not available",
-}
+})
 
 
-# 工具定义列表，供LLM调用
+# 基础工具定义（子代理）
 TOOLS = [
     {"name": "bash", "description": "Run a shell command.",
      "input_schema": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}},
@@ -96,8 +101,6 @@ TOOLS = [
      "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}},
     {"name": "edit_file", "description": "Replace exact text in file.",
      "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "old_text": {"type": "string"}, "new_text": {"type": "string"}}, "required": ["path", "old_text", "new_text"]}},
-    {"name": "TodoWrite", "description": "Update task tracking list.",
-     "input_schema": {"type": "object", "properties": {"items": {"type": "array", "items": {"type": "object", "properties": {"content": {"type": "string"}, "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]}, "activeForm": {"type": "string"}}, "required": ["content", "status", "activeForm"]}}}, "required": ["items"]}},
     {"name": "task", "description": "Spawn a subagent for isolated exploration or work.",
      "input_schema": {"type": "object", "properties": {"prompt": {"type": "string"}, "agent_type": {"type": "string", "enum": ["Explore", "general-purpose"]}}, "required": ["prompt"]}},
     {"name": "load_skill", "description": "Load specialized knowledge by name.",
@@ -116,6 +119,15 @@ TOOLS = [
      "input_schema": {"type": "object", "properties": {"task_id": {"type": "integer"}, "status": {"type": "string", "enum": ["pending", "in_progress", "completed", "deleted"]}, "add_blocked_by": {"type": "array", "items": {"type": "integer"}}, "remove_blocked_by": {"type": "array", "items": {"type": "integer"}}}, "required": ["task_id"]}},
     {"name": "task_list", "description": "List all tasks.",
      "input_schema": {"type": "object", "properties": {}}},
+    {"name": "idle", "description": "Enter idle state.",
+     "input_schema": {"type": "object", "properties": {}}},
+]
+
+
+# Leader 增量工具定义
+FULL_TOOLS = TOOLS + [
+    {"name": "TodoWrite", "description": "Update task tracking list.",
+     "input_schema": {"type": "object", "properties": {"items": {"type": "array", "items": {"type": "object", "properties": {"content": {"type": "string"}, "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]}, "activeForm": {"type": "string"}}, "required": ["content", "status", "activeForm"]}}}, "required": ["items"]}},
     {"name": "spawn_teammate", "description": "Spawn a persistent autonomous teammate.",
      "input_schema": {"type": "object", "properties": {"name": {"type": "string"}, "role": {"type": "string"}, "prompt": {"type": "string"}}, "required": ["name", "role", "prompt"]}},
     {"name": "list_teammates", "description": "List all teammates.",
@@ -130,8 +142,6 @@ TOOLS = [
      "input_schema": {"type": "object", "properties": {"teammate": {"type": "string"}}, "required": ["teammate"]}},
     {"name": "plan_approval", "description": "Approve or reject a teammate's plan.",
      "input_schema": {"type": "object", "properties": {"request_id": {"type": "string"}, "approve": {"type": "boolean"}, "feedback": {"type": "string"}}, "required": ["request_id", "approve"]}},
-    {"name": "idle", "description": "Enter idle state.",
-     "input_schema": {"type": "object", "properties": {}}},
     {"name": "claim_task", "description": "Claim a task from the board.",
      "input_schema": {"type": "object", "properties": {"task_id": {"type": "integer"}}, "required": ["task_id"]}},
 ]
