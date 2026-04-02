@@ -786,14 +786,27 @@ def agent_loop(messages: list):
         inbox = BUS.read_inbox("lead")
         if inbox:
             messages.append({"role": "user", "content": f"<inbox>{json.dumps(inbox, indent=2)}</inbox>"})
-        # LLM调用
-        response = client.messages.create(
+        # LLM调用（流式输出）
+        full_content = []
+        with client.messages.stream(
             model=MODEL, system=SYSTEM, messages=messages,
             tools=TOOLS, max_tokens=8000,
-        )
-        messages.append({"role": "assistant", "content": response.content})
-        if response.stop_reason != "tool_use":
+        ) as stream:
+            for chunk in stream.text_stream:
+                print(chunk, end="", flush=True)
+                full_content.append(chunk)
+            message = stream.get_final_message()
+            stop_reason = message.stop_reason
+        print()  # 换行
+        # 组装完整响应用于工具执行
+        content_text = "".join(full_content)
+        from anthropic.types import TextBlock
+        response_content = [TextBlock(type="text", text=content_text)]
+        messages.append({"role": "assistant", "content": response_content})
+        if stop_reason != "tool_use":
             return
+        # 获取完整响应对象
+        response = stream.get_final_message()
         # 工具执行
         results = []
         used_todo = False
