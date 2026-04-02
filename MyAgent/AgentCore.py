@@ -66,41 +66,21 @@ def _resolve_sink(sink: Optional[EventSink]) -> EventSink:
 def run_subagent(prompt: str, agent_type: str = "Explore") -> str:
     """
     生成一个独立的子代理来执行任务
-    - Explore: 只读权限（bash + read_file）
-    - general-purpose: 完整权限（bash + read/write/edit）
+    子代理使用基础工具集（TOOLS / TOOL_HANDLERS）
     """
-    sub_tools = [
-        {"name": "bash", "description": "Run command.",
-         "input_schema": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}},
-        {"name": "read_file", "description": "Read file.",
-         "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}},
-    ]
-    # 非Explore类型的代理获得写权限
-    if agent_type != "Explore":
-        sub_tools += [
-            {"name": "write_file", "description": "Write file.",
-             "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}},
-            {"name": "edit_file", "description": "Edit file.",
-             "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "old_text": {"type": "string"}, "new_text": {"type": "string"}}, "required": ["path", "old_text", "new_text"]}},
-        ]
-    sub_handlers = {
-        "bash": lambda **kw: run_bash(kw["command"]),
-        "read_file": lambda **kw: run_read(kw["path"]),
-        "write_file": lambda **kw: run_write(kw["path"], kw["content"]),
-        "edit_file": lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
-    }
+    _ = agent_type
     sub_msgs = [{"role": "user", "content": prompt}]
     resp = None
     # 最多30轮对话循环
     for _ in range(30):
-        resp = client.messages.create(model=MODEL, messages=sub_msgs, tools=sub_tools, max_tokens=8000)
+        resp = client.messages.create(model=MODEL, messages=sub_msgs, tools=TOOLS, max_tokens=8000)
         sub_msgs.append({"role": "assistant", "content": resp.content})
         if resp.stop_reason != "tool_use":
             break
         results = []
         for b in resp.content:
             if b.type == "tool_use":
-                h = sub_handlers.get(b.name, lambda **kw: "Unknown tool")
+                h = TOOL_HANDLERS.get(b.name, lambda **kw: "Unknown tool")
                 results.append({"type": "tool_result", "tool_use_id": b.id, "content": str(h(**b.input))[:50000]})
         sub_msgs.append({"role": "user", "content": results})
     if resp:
@@ -139,7 +119,6 @@ import json
 import uuid
 
 TOOL_HANDLERS.update({
-    "TodoWrite":        lambda **kw: TODO.update(kw["items"]),
     "task":             lambda **kw: run_subagent(kw["prompt"], kw.get("agent_type", "Explore")),
     "load_skill":       lambda **kw: SKILLS.load(kw["name"]),
     "background_run":   lambda **kw: BG.run(kw["command"], kw.get("timeout", 120)),
@@ -148,6 +127,13 @@ TOOL_HANDLERS.update({
     "task_get":         lambda **kw: TASK_MGR.get(kw["task_id"]),
     "task_update":      lambda **kw: TASK_MGR.update(kw["task_id"], kw.get("status"), kw.get("add_blocked_by"), kw.get("remove_blocked_by")),
     "task_list":        lambda **kw: TASK_MGR.list_all(),
+    "compress":         lambda **kw: "Compressing...",
+})
+
+FULL_TOOL_HANDLERS.update(TOOL_HANDLERS)
+
+FULL_TOOL_HANDLERS.update({
+    "TodoWrite":        lambda **kw: TODO.update(kw["items"]),
     "spawn_teammate":   lambda **kw: TEAM.spawn(kw["name"], kw["role"], kw["prompt"]),
     "list_teammates":   lambda **kw: TEAM.list_all(),
     "send_message":     lambda **kw: BUS.send("lead", kw["to"], kw["content"], kw.get("msg_type", "message")),
@@ -156,7 +142,6 @@ TOOL_HANDLERS.update({
     "shutdown_request": lambda **kw: handle_shutdown_request(kw["teammate"]),
     "plan_approval":    lambda **kw: handle_plan_review(kw["request_id"], kw["approve"], kw.get("feedback", "")),
     "claim_task":       lambda **kw: TASK_MGR.claim(kw["task_id"], "lead"),
-    "compress":         lambda **kw: "Compressing...",
 })
 
 
@@ -195,7 +180,7 @@ def agent_loop(messages: list, sink: Optional[EventSink] = None):
         full_content = []
         with client.messages.stream(
             model=MODEL, system=SYSTEM, messages=messages,
-            tools=TOOLS, max_tokens=8000,
+            tools=FULL_TOOLS, max_tokens=8000,
         ) as stream:
             for chunk in stream.text_stream:
                 out.on_text(chunk)
@@ -226,7 +211,7 @@ def agent_loop(messages: list, sink: Optional[EventSink] = None):
                 elif block.name in ("read_file", "write_file", "edit_file") and isinstance(block.input, dict):
                     tool_input_preview = block.input.get("path", "")
                 out.on_event(f"[tool] using {block.name}" + (f": {tool_input_preview}" if tool_input_preview else ""))
-                handler = TOOL_HANDLERS.get(block.name)
+                handler = FULL_TOOL_HANDLERS.get(block.name)
                 try:
                     tool_output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
                 except Exception as e:
