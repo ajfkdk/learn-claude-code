@@ -34,6 +34,10 @@ AgentCore.py - Import Aggregation Layer
 from config import *
 from tools import *
 from managers import *
+from config import SYSTEM
+
+# Explicit re-exports for backward compatibility
+from managers import TODO, TASK_MGR, BG, BUS, TEAM, SKILLS
 
 # === SECTION: subagent (s04) ===
 # 独立子代理，用于隔离的探索或工作任务
@@ -81,15 +85,6 @@ def run_subagent(prompt: str, agent_type: str = "Explore") -> str:
     if resp:
         return "".join(b.text for b in resp.content if hasattr(b, "text")) or "(no summary)"
     return "(subagent failed)"
-
-
-# === SECTION: system_prompt ===
-# 系统提示词，定义代理的角色和能力
-
-SYSTEM = f"""You are a coding agent at {WORKDIR}. Use tools to solve tasks.
-Prefer task_create/task_update/task_list for multi-step work. Use TodoWrite for short checklists.
-Use task for subagent delegation. Use load_skill for specialized knowledge.
-Skills: {SKILLS.descriptions()}"""
 
 
 # === SECTION: shutdown_protocol (s10) ===
