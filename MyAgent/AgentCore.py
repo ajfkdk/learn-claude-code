@@ -35,9 +35,30 @@ from config import *
 from tools import *
 from managers import *
 from config import SYSTEM
+from typing import Optional, Protocol
 
 # Explicit re-exports for backward compatibility
 from managers import TODO, TASK_MGR, BG, BUS, TEAM, SKILLS
+
+
+class EventSink(Protocol):
+    def on_text(self, text: str) -> None:
+        ...
+
+    def on_event(self, text: str) -> None:
+        ...
+
+
+class StdoutSink:
+    def on_text(self, text: str) -> None:
+        print(text, end="", flush=True)
+
+    def on_event(self, text: str) -> None:
+        print(text)
+
+
+def _resolve_sink(sink: Optional[EventSink]) -> EventSink:
+    return sink or StdoutSink()
 
 # === SECTION: subagent (s04) ===
 # 独立子代理，用于隔离的探索或工作任务
@@ -142,7 +163,7 @@ TOOL_HANDLERS.update({
 # === SECTION: agent_loop ===
 # 主代理循环：压缩 -> 后台通知 -> 收件箱 -> LLM调用 -> 工具执行
 
-def agent_loop(messages: list):
+def agent_loop(messages: list, sink: Optional[EventSink] = None):
     """
     主循环流程：
     1. 微压缩：清除旧工具结果
@@ -154,11 +175,12 @@ def agent_loop(messages: list):
     7. 待办提醒：如果待办项未更新则提醒
     """
     rounds_without_todo = 0
+    out = _resolve_sink(sink)
     while True:
         # s06: 压缩管道
         microcompact(messages)
         if estimate_tokens(messages) > TOKEN_THRESHOLD:
-            print("[auto-compact triggered]")
+            out.on_event("[auto-compact triggered]")
             messages[:] = auto_compact(messages)
         # s08: 处理后台任务通知
         notifs = BG.drain()
@@ -176,11 +198,11 @@ def agent_loop(messages: list):
             tools=TOOLS, max_tokens=8000,
         ) as stream:
             for chunk in stream.text_stream:
-                print(chunk, end="", flush=True)
+                out.on_text(chunk)
                 full_content.append(chunk)
             message = stream.get_final_message()
             stop_reason = message.stop_reason
-        print()  # 换行
+        out.on_text("\n")
         # 组装完整响应用于工具执行
         content_text = "".join(full_content)
         from anthropic.types import TextBlock
@@ -203,15 +225,15 @@ def agent_loop(messages: list):
                     tool_input_preview = block.input.get("command", "")
                 elif block.name in ("read_file", "write_file", "edit_file") and isinstance(block.input, dict):
                     tool_input_preview = block.input.get("path", "")
-                print(f"[tool] using {block.name}" + (f": {tool_input_preview}" if tool_input_preview else ""))
+                out.on_event(f"[tool] using {block.name}" + (f": {tool_input_preview}" if tool_input_preview else ""))
                 handler = TOOL_HANDLERS.get(block.name)
                 try:
-                    output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
+                    tool_output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
                 except Exception as e:
-                    output = f"Error: {e}"
-                print(f"> {block.name}:")
-                print(str(output)[:200])
-                results.append({"type": "tool_result", "tool_use_id": block.id, "content": str(output)})
+                    tool_output = f"Error: {e}"
+                out.on_event(f"> {block.name}:")
+                out.on_event(str(tool_output)[:200])
+                results.append({"type": "tool_result", "tool_use_id": block.id, "content": str(tool_output)})
                 if block.name == "TodoWrite":
                     used_todo = True
         # s03: 待办提醒（仅当待办工作流活跃时）
@@ -221,9 +243,43 @@ def agent_loop(messages: list):
         messages.append({"role": "user", "content": results})
         # s06: 手动压缩
         if manual_compress:
-            print("[manual compact]")
+            out.on_event("[manual compact]")
             messages[:] = auto_compact(messages)
             return
+
+
+def execute_repl_command(query: str, history: list, sink: Optional[EventSink] = None) -> bool:
+    out = _resolve_sink(sink)
+    cmd = query.strip()
+
+    if cmd in ("/exit", "/quit"):
+        return False
+
+    if cmd == "/help":
+        out.on_event("Commands: /help /compact /tasks /team /inbox /exit")
+    elif cmd == "/compact":
+        history[:] = auto_compact(history)
+        out.on_event("[manual compact]")
+    elif cmd == "/tasks":
+        out.on_event(TASK_MGR.list_all())
+    elif cmd == "/team":
+        out.on_event(TEAM.list_all())
+    elif cmd == "/inbox":
+        out.on_event(json.dumps(BUS.read_inbox("lead"), indent=2))
+    else:
+        out.on_event(f"Unknown command: {cmd}")
+    return True
+
+
+def submit_turn(history: list, query: str, sink: Optional[EventSink] = None) -> bool:
+    text = query.strip()
+    if not text:
+        return True
+    if text.startswith("/"):
+        return execute_repl_command(text, history, sink=sink)
+    history.append({"role": "user", "content": text})
+    agent_loop(history, sink=sink)
+    return True
 
 
 # === SECTION: repl ===

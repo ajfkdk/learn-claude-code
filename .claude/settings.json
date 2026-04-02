@@ -2,7 +2,15 @@
   "permissions": {
     "allow": [
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Read(//c/Users/user/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.5/skills/writing-plans/**)",
+      "Read(//c/Users/user/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.5/skills/subagent-driven-development/**)",
+      "Bash(ls MyAgent/*.py)",
+      "Bash(PYTHONPATH=. python -c \"from AgentCore import SYSTEM; print\\('SYSTEM OK:', type\\(SYSTEM\\)\\)\")",
+      "Bash(PYTHONPATH=MyAgent python -c \"from AgentCore import SYSTEM; print\\('SYSTEM OK:', type\\(SYSTEM\\)\\)\")",
+      "Bash(PYTHONPATH=MyAgent python -c \"import agentcore; print\\('SYSTEM:', type\\(agentcore.SYSTEM\\)\\)\")",
+      "Bash(PYTHONPATH=MyAgent python -c \"from AgentCore import SYSTEM; print\\('AgentCore.SYSTEM OK'\\)\")",
+      "Bash(ls -la MyAgent/*.py)"
     ]
   }
 }

@@ -82,13 +82,44 @@
 ```
 
 ---
+补充信息：
+1.借鉴claudecode的报错处理机制：
 
-## 各 Phase 预计工作量
+prompt too long 预阻断（不发请求，直接返回）
+ClaudeCode/src/query.ts:629
 
-| Phase | 难度 | 估计 |
-|-------|------|------|
-| Phase 1 | 低-中 | 1-2 天 |
-| Phase 2 | 中-高 | 3-5 天 |
-| Phase 3 | 中-高 | 3-5 天 |
-| Phase 4 | 高 | 5-7 天 |
-| Phase 5 | 高 | 5-7 天 |
+prompt too long 运行中恢复失败后的最终报错（collapse/reacive compact 后仍失败）
+ClaudeCode/src/query.ts:1068、ClaudeCode/src/query.ts:1171
+
+媒体尺寸错误（图片/PDF 过大）
+ClaudeCode/src/query.ts:972、ClaudeCode/src/query.ts:1085
+
+max_output_tokens（先升级上限、再恢复重试、最后才暴露错误）
+ClaudeCode/src/query.ts:1188
+
+模型 fallback 触发（FallbackTriggeredError，切换模型重试）
+ClaudeCode/src/query.ts:896
+
+用户中断/abort（补齐 tool_result 后安全终止）
+ClaudeCode/src/query.ts:1018
+
+通用模型/运行时错误（outer catch，返回 model_error）
+ClaudeCode/src/query.ts:958
+
+stop hook 阻断/禁止继续（结构化中止，不是异常吞掉）
+ClaudeCode/src/query.ts:1270
+
+自动压缩连续失败熔断（避免无限重试）
+ClaudeCode/src/services/compact/autoCompact.ts:257
+
+
+上下文压缩机制
+ Tool result budget
+ History snip
+ Microcompact
+ Context collaps
+ Autocompact
+
+ prompt借鉴
+ 如何组装一个个prompt
+ 
