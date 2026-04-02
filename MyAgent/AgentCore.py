@@ -90,10 +90,6 @@ def run_subagent(prompt: str, agent_type: str = "Explore") -> str:
 # === SECTION: shutdown_protocol (s10) ===
 # 关闭协议：请求ID握手机制
 
-shutdown_requests = {}
-plan_requests = {}
-
-
 def handle_shutdown_request(teammate: str) -> str:
     """向指定成员发送关闭请求"""
     req_id = str(uuid.uuid4())[:8]
